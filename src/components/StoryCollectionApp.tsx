@@ -1,23 +1,38 @@
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type SubmitHandler } from 'react-hook-form';
+
+// Define the form data interface
+interface FormData {
+  name: string;
+  email: string;
+  story: string;
+  images?: File[];
+}
+
+// Define the interface for converted image data
+interface ImageData {
+  name: string;
+  type: string;
+  size: number;
+  data: string | ArrayBuffer | null;
+}
 
 const StoryCollectionApp = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
-    setValue,
-    watch
-  } = useForm();
+    setValue
+  } = useForm<FormData>();
 
   // Sanitize text input
-  const sanitizeText = (text) => {
+  const sanitizeText = (text: string): string => {
     return text
       .replace(/[<>]/g, '') // Remove basic HTML tags
       .replace(/javascript:/gi, '') // Remove javascript: protocol
@@ -26,7 +41,7 @@ const StoryCollectionApp = () => {
   };
 
   // Handle file drop
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragActive(false);
     
@@ -34,21 +49,22 @@ const StoryCollectionApp = () => {
     handleFiles(files);
   };
 
-  const handleFiles = (files) => {
+  const handleFiles = (files: File[]) => {
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
     if (imageFiles.length > 0) {
-      setUploadedFiles(prev => [...prev, ...imageFiles]);
-      setValue('images', [...uploadedFiles, ...imageFiles]);
+      const newFiles = [...uploadedFiles, ...imageFiles];
+      setUploadedFiles(newFiles);
+      setValue('images', newFiles);
     }
   };
 
-  const removeFile = (index) => {
+  const removeFile = (index: number) => {
     const newFiles = uploadedFiles.filter((_, i) => i !== index);
     setUploadedFiles(newFiles);
     setValue('images', newFiles);
   };
 
-  const convertToBase64 = (file) => {
+  const convertToBase64 = (file: File): Promise<string | ArrayBuffer | null> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -57,7 +73,7 @@ const StoryCollectionApp = () => {
     });
   };
 
-  const onSubmit = async (data) => {
+  const onSubmit: SubmitHandler<FormData> = async (data) => {
     setIsSubmitting(true);
     setSubmitMessage('');
 
@@ -70,9 +86,9 @@ const StoryCollectionApp = () => {
       };
 
       // Convert images to base64 for Netlify Functions
-      let imageData = [];
+      let imageData: ImageData[] = [];
       if (uploadedFiles.length > 0) {
-        const base64Promises = uploadedFiles.map(async (file) => {
+        const base64Promises = uploadedFiles.map(async (file: File) => {
           const base64 = await convertToBase64(file);
           return {
             name: file.name,
@@ -101,7 +117,7 @@ const StoryCollectionApp = () => {
         throw new Error('Submission failed');
       }
 
-      const result = await response.json();
+      await response.json(); // Process the response but don't store it
       setSubmitMessage('Story submitted successfully! Thank you for sharing.');
       reset();
       setUploadedFiles([]);
@@ -118,7 +134,7 @@ const StoryCollectionApp = () => {
       {/* Include Bulma CSS */}
       <link 
         rel="stylesheet" 
-        href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+        href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css"
       />
       <link 
         rel="stylesheet" 
@@ -139,7 +155,7 @@ const StoryCollectionApp = () => {
           <div className="columns is-centered">
             <div className="column is-8">
               <div className="box">
-                <div>
+                <form onSubmit={handleSubmit(onSubmit)}>
                   {/* Name Field */}
                   <div className="field">
                     <label className="label">Name *</label>
@@ -195,7 +211,7 @@ const StoryCollectionApp = () => {
                       <textarea
                         className={`textarea ${errors.story ? 'is-danger' : ''}`}
                         placeholder="Tell us your story..."
-                        rows="8"
+                        rows={8}
                         {...register('story', {
                           required: 'Story is required',
                           minLength: {
@@ -226,17 +242,20 @@ const StoryCollectionApp = () => {
                           textAlign: 'center',
                           cursor: 'pointer'
                         }}
-                        onDragEnter={(e) => {
+                        onDragEnter={(e: React.DragEvent<HTMLDivElement>) => {
                           e.preventDefault();
                           setDragActive(true);
                         }}
-                        onDragLeave={(e) => {
+                        onDragLeave={(e: React.DragEvent<HTMLDivElement>) => {
                           e.preventDefault();
                           setDragActive(false);
                         }}
-                        onDragOver={(e) => e.preventDefault()}
+                        onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()}
                         onDrop={handleDrop}
-                        onClick={() => document.getElementById('file-input').click()}
+                        onClick={() => {
+                          const fileInput = document.getElementById('file-input') as HTMLInputElement;
+                          fileInput?.click();
+                        }}
                       >
                         <div className="content">
                           <p className="has-text-centered">
@@ -255,7 +274,7 @@ const StoryCollectionApp = () => {
                           multiple
                           accept="image/*"
                           style={{ display: 'none' }}
-                          onChange={(e) => handleFiles(Array.from(e.target.files))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFiles(Array.from(e.target.files || []))}
                         />
                       </div>
                     </div>
@@ -268,11 +287,12 @@ const StoryCollectionApp = () => {
                       <div className="tags">
                         {uploadedFiles.map((file, index) => (
                           <span key={index} className="tag is-info">
-                            <i className="fas fa-image mr-1"></i>
+                            <i className="fas fa-image" style={{ marginRight: '0.5rem' }}></i>
                             {file.name}
                             <button
                               type="button"
-                              className="delete is-small ml-1"
+                              className="delete is-small"
+                              style={{ marginLeft: '0.5rem' }}
                               onClick={() => removeFile(index)}
                             ></button>
                           </span>
@@ -285,10 +305,9 @@ const StoryCollectionApp = () => {
                   <div className="field">
                     <div className="control">
                       <button
-                        type="button"
+                        type="submit"
                         className={`button is-primary is-large is-fullwidth ${isSubmitting ? 'is-loading' : ''}`}
                         disabled={isSubmitting}
-                        onClick={handleSubmit(onSubmit)}
                       >
                         {isSubmitting ? 'Submitting...' : 'Submit Story'}
                       </button>
@@ -305,7 +324,7 @@ const StoryCollectionApp = () => {
                       {submitMessage}
                     </div>
                   )}
-                </div>
+                </form>
               </div>
             </div>
           </div>
