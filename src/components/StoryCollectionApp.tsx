@@ -100,8 +100,8 @@ const StoryCollectionApp = () => {
         imageData = await Promise.all(base64Promises);
       }
 
-      // Submit to Netlify Function
-      const response = await fetch('/.netlify/functions/submit-story', {
+      // Submit to Cloudflare Worker
+      const response = await fetch('https://super-shape-c095.pfmartin03.workers.dev/submit-story', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
