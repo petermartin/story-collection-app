@@ -101,7 +101,7 @@ const StoryCollectionApp = () => {
       }
 
       // Submit to Cloudflare Worker
-      const response = await fetch('https://super-shape-c095.pfmartin03.workers.dev/submit-story', {
+      const response = await fetch('https://story-collection-worker.pfmartin03.workers.dev/submit-story', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
