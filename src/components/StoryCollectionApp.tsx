@@ -80,7 +80,7 @@ const StoryCollectionApp = () => {
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch('https://your-worker-name.your-subdomain.workers.dev/upload-image', {
+      const response = await fetch('https://story-collection-worker.workers.dev/upload-image', {
         method: 'POST',
         body: formData,
       });
