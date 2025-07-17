@@ -129,7 +129,7 @@ const StoryCollectionApp = () => {
       };
 
       // Submit to Cloudflare Worker with image references
-      const response = await fetch('https://your-worker-name.your-subdomain.workers.dev/submit-story', {
+      const response = await fetch('https://story-collection-worker.workers.dev/submit-story', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
