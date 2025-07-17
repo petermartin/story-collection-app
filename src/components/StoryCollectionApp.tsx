@@ -6,22 +6,27 @@ interface FormData {
   name: string;
   email: string;
   story: string;
-  images?: File[];
+  images?: UploadedImage[];
 }
 
-// Define the interface for converted image data
-interface ImageData {
-  name: string;
-  type: string;
-  size: number;
-  data: string | ArrayBuffer | null;
+// Define the interface for uploaded images
+interface UploadedImage {
+  id: string;
+  url: string;
+  filename: string;
+  variants: {
+    public: string;
+    thumbnail?: string;
+  };
 }
 
 const StoryCollectionApp = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  // const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [uploadingImages, setUploadingImages] = useState<boolean>(false);
 
   const {
     register,
@@ -49,29 +54,67 @@ const StoryCollectionApp = () => {
     handleFiles(files);
   };
 
-  const handleFiles = (files: File[]) => {
+  const handleFiles = async (files: File[]) => {
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
     if (imageFiles.length > 0) {
-      const newFiles = [...uploadedFiles, ...imageFiles];
-      setUploadedFiles(newFiles);
-      setValue('images', newFiles);
+      setUploadingImages(true);
+      try {
+        const uploadPromises = imageFiles.map(file => uploadImageToCloudflare(file));
+        const uploadedImageResults = await Promise.all(uploadPromises);
+        
+        const successfulUploads = uploadedImageResults.filter(result => result !== null) as UploadedImage[];
+        
+        setUploadedImages(prev => [...prev, ...successfulUploads]);
+        setValue('images', [...uploadedImages, ...successfulUploads]);
+      } catch (error) {
+        console.error('Error uploading images:', error);
+        setSubmitMessage('Error uploading images. Please try again.');
+      } finally {
+        setUploadingImages(false);
+      }
     }
   };
 
-  const removeFile = (index: number) => {
-    const newFiles = uploadedFiles.filter((_, i) => i !== index);
-    setUploadedFiles(newFiles);
-    setValue('images', newFiles);
+  const uploadImageToCloudflare = async (file: File): Promise<UploadedImage | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('https://your-worker-name.your-subdomain.workers.dev/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        return result.image;
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
   };
 
-  const convertToBase64 = (file: File): Promise<string | ArrayBuffer | null> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = error => reject(error);
-    });
+  const removeImage = (index: number) => {
+    const newImages = uploadedImages.filter((_, i) => i !== index);
+    setUploadedImages(newImages);
+    setValue('images', newImages);
   };
+
+  // const convertToBase64 = (file: File): Promise<string | ArrayBuffer | null> => {
+  //   return new Promise((resolve, reject) => {
+  //     const reader = new FileReader();
+  //     reader.readAsDataURL(file);
+  //     reader.onload = () => resolve(reader.result);
+  //     reader.onerror = error => reject(error);
+  //   });
+  // };
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     setIsSubmitting(true);
@@ -85,30 +128,15 @@ const StoryCollectionApp = () => {
         story: sanitizeText(data.story),
       };
 
-      // Convert images to base64 for Netlify Functions
-      let imageData: ImageData[] = [];
-      if (uploadedFiles.length > 0) {
-        const base64Promises = uploadedFiles.map(async (file: File) => {
-          const base64 = await convertToBase64(file);
-          return {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            data: base64
-          };
-        });
-        imageData = await Promise.all(base64Promises);
-      }
-
-      // Submit to Cloudflare Worker
-      const response = await fetch('https://story-collection-worker.pfmartin03.workers.dev/submit-story', {
+      // Submit to Cloudflare Worker with image references
+      const response = await fetch('https://your-worker-name.your-subdomain.workers.dev/submit-story', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           ...sanitizedData,
-          images: imageData,
+          images: uploadedImages,
           submittedAt: new Date().toISOString(),
         }),
       });
@@ -120,7 +148,7 @@ const StoryCollectionApp = () => {
       await response.json(); // Process the response but don't store it
       setSubmitMessage('Story submitted successfully! Thank you for sharing.');
       reset();
-      setUploadedFiles([]);
+      setUploadedImages([]);
     } catch (error) {
       setSubmitMessage('Error submitting story. Please try again.');
       console.error('Submission error:', error);
@@ -259,10 +287,10 @@ const StoryCollectionApp = () => {
                       >
                         <div className="content">
                           <p className="has-text-centered">
-                            <i className="fas fa-upload fa-2x"></i>
+                            <i className={`fas fa-upload fa-2x ${uploadingImages ? 'fa-spin' : ''}`}></i>
                           </p>
                           <p className="has-text-centered">
-                            <strong>Click to upload</strong> or drag and drop images here
+                            <strong>{uploadingImages ? 'Uploading...' : 'Click to upload'}</strong> {!uploadingImages && 'or drag and drop images here'}
                           </p>
                           <p className="has-text-centered is-size-7">
                             Supported formats: JPG, PNG, GIF. Max 5MB per image.
@@ -280,22 +308,39 @@ const StoryCollectionApp = () => {
                     </div>
                   </div>
 
-                  {/* Preview uploaded files */}
-                  {uploadedFiles.length > 0 && (
+                  {/* Preview uploaded images */}
+                  {uploadedImages.length > 0 && (
                     <div className="field">
-                      <label className="label">Selected Images:</label>
-                      <div className="tags">
-                        {uploadedFiles.map((file, index) => (
-                          <span key={index} className="tag is-info">
-                            <i className="fas fa-image" style={{ marginRight: '0.5rem' }}></i>
-                            {file.name}
-                            <button
-                              type="button"
-                              className="delete is-small"
-                              style={{ marginLeft: '0.5rem' }}
-                              onClick={() => removeFile(index)}
-                            ></button>
-                          </span>
+                      <label className="label">Uploaded Images:</label>
+                      <div className="columns is-multiline">
+                        {uploadedImages.map((image, index) => (
+                          <div key={index} className="column is-one-quarter">
+                            <div className="card">
+                              <div className="card-image">
+                                <figure className="image is-4by3">
+                                  <img 
+                                    src={image.variants.thumbnail || image.variants.public} 
+                                    alt={image.filename}
+                                    style={{ objectFit: 'cover' }}
+                                  />
+                                </figure>
+                              </div>
+                              <div className="card-content">
+                                <p className="is-size-7 has-text-centered">
+                                  {image.filename}
+                                </p>
+                                <div className="has-text-centered">
+                                  <button
+                                    type="button"
+                                    className="button is-danger is-small"
+                                    onClick={() => removeImage(index)}
+                                  >
+                                    <i className="fas fa-trash"></i>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -306,10 +351,10 @@ const StoryCollectionApp = () => {
                     <div className="control">
                       <button
                         type="submit"
-                        className={`button is-primary is-large is-fullwidth ${isSubmitting ? 'is-loading' : ''}`}
-                        disabled={isSubmitting}
+                        className={`button is-primary is-large is-fullwidth ${isSubmitting || uploadingImages ? 'is-loading' : ''}`}
+                        disabled={isSubmitting || uploadingImages}
                       >
-                        {isSubmitting ? 'Submitting...' : 'Submit Story'}
+                        {isSubmitting ? 'Submitting...' : uploadingImages ? 'Uploading Images...' : 'Submit Story'}
                       </button>
                     </div>
                   </div>
